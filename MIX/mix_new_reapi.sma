@@ -73,8 +73,6 @@ public plugin_init() {
 	g_hudMoneyCTs = CreateHudSyncObj();
 	g_hudMoneyTs = CreateHudSyncObj();
 
-	register_event("HLTV", "round_start", "a", "1=0", "2=0"); //freezetime starts
-
 	g_msgTeamScore = get_user_msgid("TeamScore");
 	g_msgScoreInfo = get_user_msgid("ScoreInfo");
 
@@ -84,6 +82,13 @@ public plugin_init() {
 	RegisterHookChain(RG_RoundEnd, "hook_round_end", false); //pre round end
 	RegisterHookChain(RG_CSGameRules_CleanUpMap, "hook_freezetime_start", true); // post freezetime start
 	RegisterHookChain(RG_CSGameRules_OnRoundFreezeEnd, "hook_freezetime_end", true); //post freezetime end
+}
+
+
+public hook_spawn(id) {
+	if ((gameState == W) && is_user_alive(id)) {
+		cs_set_user_money(id, 16000, 1);
+	}
 }
 
 
@@ -151,6 +156,50 @@ public hook_round_end(WinStatus:status, ScenarioEventEndRound:event, Float:tmDel
 	}
 	return HC_CONTINUE;
 }
+
+
+public hook_freezetime_start() {
+	switch (gameState) {
+		case W: {
+			client_print(0, print_chat, "WARMUP :: RESPAWNING ENABLED");
+		} case K: {
+			client_print(0, print_chat, "LIVE :: KNIFE ROUND");
+			//set_member_game(m_bGameStarted, true);
+		} case L: {
+			if (g_iScoreTotal < 15) {
+				client_print(0, print_chat, "LIVE :: FIRST HALF -- ROUND #%d", g_iScoreTotal+1);
+			} else {
+				client_print(0, print_chat, "LIVE :: SECOND HALF -- ROUND #%d", g_iScoreTotal+1);
+			}
+			_util_print_scores(0);
+		} case O: {
+			if (g_iScoreTotal < 15) {
+				client_print(0, print_chat, "LIVE :: OVERTIME -- FIRST HALF -- ROUND #%d", g_iScoreTotal+1);
+			} else {
+				client_print(0, print_chat, "LIVE :: OVERTIME -- SECOND HALF -- ROUND #%d", g_iScoreTotal+1);
+			}
+			_util_print_scores(0);
+		}
+	}
+}
+public hook_freezetime_end() {
+	//TODO do we need to do anything here?
+}
+
+
+public hook_teamscore(iMsgId, msgDest , iMsgEntity) {
+	if (g_bLive) {
+		new szTeam[2];
+		get_msg_arg_string(1, szTeam, charsmax(szTeam));
+		if (szTeam[0] == 'T') {
+			set_msg_arg_int(2, ARG_SHORT, g_iScoreTs); //set msg arg to display "REAL Ts (mix)" score
+		} else if (szTeam[0] == 'C') {
+			set_msg_arg_int(2, ARG_SHORT, g_iScoreCTs); //same but for CTs
+		}
+	}
+	return PLUGIN_CONTINUE;
+}
+
 
 public server_cfg() {
 	server_cmd(cfg(default)); //load default settings
@@ -359,51 +408,6 @@ public clcmd_say_money(id) {
 }
 
 
-public hook_freezetime_start() {
-	switch (gameState) {
-		case W: {
-			client_print(0, print_chat, "WARMUP :: RESPAWNING ENABLED");
-		} case K: {
-			client_print(0, print_chat, "LIVE :: KNIFE ROUND");
-			//set_member_game(m_bGameStarted, true);
-		} case L: {
-			if (g_iScoreTotal < 15) {
-				client_print(0, print_chat, "LIVE :: FIRST HALF -- ROUND #%d", g_iScoreTotal+1);
-			} else {
-				client_print(0, print_chat, "LIVE :: SECOND HALF -- ROUND #%d", g_iScoreTotal+1);
-			}
-			_util_print_scores(0);
-		} case O: {
-			if (g_iScoreTotal < 15) {
-				client_print(0, print_chat, "LIVE :: OVERTIME -- FIRST HALF -- ROUND #%d", g_iScoreTotal+1);
-			} else {
-				client_print(0, print_chat, "LIVE :: OVERTIME -- SECOND HALF -- ROUND #%d", g_iScoreTotal+1);
-			}
-			_util_print_scores(0);
-		}
-	}
-}
-
-
-public hook_spawn(id) {
-	if ((gameState == W) && is_user_alive(id)) {
-		cs_set_user_money(id, 16000, 1);
-	}
-}
-
-
-public hook_teamscore(iMsgId, msgDest , iMsgEntity) {
-	if (g_bLive) {
-		new szTeam[2];
-		get_msg_arg_string(1, szTeam, charsmax(szTeam));
-		if (szTeam[0] == 'T') {
-			set_msg_arg_int(2, ARG_SHORT, g_iScoreTs); //set msg arg to display "REAL Ts (mix)" score
-		} else if (szTeam[0] == 'C') {
-			set_msg_arg_int(2, ARG_SHORT, g_iScoreCTs); //same but for CTs
-		}
-	}
-	return PLUGIN_CONTINUE;
-}
 _scores_swap() {
 	new tmp = g_iScoreTs;
 	g_iScoreTs = g_iScoreCTs;
