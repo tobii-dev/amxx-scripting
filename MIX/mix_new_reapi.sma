@@ -26,11 +26,6 @@ enum eMixState {
 };
 new eMixState:gameState = N; //default
 
-new HookChain:g_hookChainSpawn;
-new HookChain:g_hookChainRoundEnd;
-new HookChain:g_hookChainCleanUpMap;
-new HookChain:g_hookChainOnRoundFreezeEnd;
-
 new g_iScoreTs, g_iScoreCTs, g_iScoreTotal, g_iScoreLastTie; //store the scores //TODO reapi has a method for this, need to test it
 new g_msgTeamScore; //used for updating team scores on the scoreboard
 new g_msgScoreInfo; //user for updating player scores on the scoreboard
@@ -85,10 +80,10 @@ public plugin_init() {
 
 	register_message(g_msgTeamScore, "hook_teamscore"); //hook teamscore msg last
 
-	g_hookChainSpawn = RegisterHookChain(RG_CBasePlayer_Spawn, "hook_spawn", true); //called POST spawn
-	g_hookChainRoundEnd = RegisterHookChain(RG_RoundEnd, "hook_round_end", false); //pre round end
-	g_hookChainCleanUpMap = RegisterHookChain(RG_CSGameRules_CleanUpMap, "hook_freezetime_start", true); // post freezetime start
-	g_hookChainOnRoundFreezeEnd = RegisterHookChain(RG_CSGameRules_OnRoundFreezeEnd, "hook_freezetime_end", true); //post freezetime end
+	RegisterHookChain(RG_CBasePlayer_Spawn, "hook_spawn", true); //called POST spawn
+	RegisterHookChain(RG_RoundEnd, "hook_round_end", false); //pre round end
+	RegisterHookChain(RG_CSGameRules_CleanUpMap, "hook_freezetime_start", true); // post freezetime start
+	RegisterHookChain(RG_CSGameRules_OnRoundFreezeEnd, "hook_freezetime_end", true); //post freezetime end
 }
 
 
@@ -159,10 +154,6 @@ public hook_round_end(WinStatus:status, ScenarioEventEndRound:event, Float:tmDel
 
 public server_cfg() {
 	server_cmd(cfg(default)); //load default settings
-	DisableHookChain(g_hookChainSpawn); //dont do spawn stuff yet
-	DisableHookChain(g_hookChainRoundEnd); 
-	DisableHookChain(g_hookChainCleanUpMap); 
-	DisableHookChain(g_hookChainOnRoundFreezeEnd); 
 }
 
 
@@ -171,46 +162,26 @@ public _start(eMixState:x) {
 		case N: {
 			gameState = N;
 			server_cmd(cfg(default));
-			DisableHookChain(g_hookChainSpawn);
-			DisableHookChain(g_hookChainRoundEnd); 
-			DisableHookChain(g_hookChainCleanUpMap); 
-			DisableHookChain(g_hookChainOnRoundFreezeEnd); 
 			client_print(0, print_chat, "Game is now in normal mode, respawning is off.");
 			g_bLive = false;
 		} case W: {
 			gameState = W;
 			server_cmd(cfg(warmup));
-			EnableHookChain(g_hookChainSpawn);
-			EnableHookChain(g_hookChainRoundEnd); 
-			EnableHookChain(g_hookChainCleanUpMap); 
-			EnableHookChain(g_hookChainOnRoundFreezeEnd); 
 			client_print(0, print_chat, "Warmup has started. Enjoy!");
 			g_bLive = false;
 		} case K: {
-			DisableHookChain(g_hookChainSpawn);
-			EnableHookChain(g_hookChainRoundEnd); 
-			EnableHookChain(g_hookChainCleanUpMap); 
-			EnableHookChain(g_hookChainOnRoundFreezeEnd); 
 			gameState = K;
 			server_cmd(cfg(knife));
 			_scores_reset();
 			g_bLive = true;
 			//set_member_game(m_bGameStarted, true);
 		} case L: {
-			DisableHookChain(g_hookChainSpawn);
-			EnableHookChain(g_hookChainRoundEnd); 
-			EnableHookChain(g_hookChainCleanUpMap); 
-			EnableHookChain(g_hookChainOnRoundFreezeEnd); 
 			demo_record();
 			gameState = L;
 			_scores_reset();
 			server_cmd(cfg(live));
 			g_bLive = true;
 		} case O: {
-			DisableHookChain(g_hookChainSpawn);
-			EnableHookChain(g_hookChainRoundEnd); 
-			EnableHookChain(g_hookChainCleanUpMap); 
-			EnableHookChain(g_hookChainOnRoundFreezeEnd); 
 			gameState = O;
 			server_cmd(cfg(extra));
 			g_bLive = true;
