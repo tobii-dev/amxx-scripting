@@ -1,25 +1,21 @@
-#include <amxmodx> //duh
-#include <amxconst> //duh
-#include <amxmisc> //get_players_ex function
-#include <cstrike> //cs_user funcs
-#include <reapi> //used
-
+#include <amxmodx>
+#include <amxconst>
+#include <amxmisc>
+#include <cstrike>
+#include <reapi>
 
 //TODO refactor to ReAPI methods (easier to read & faster to load)
 
 #define PLUGIN	"Mix-ReAPI"
-#define VERSION "0.13"
-#define AUTHOR	"NoFear & tobii"
-
-//#define MAX_MAPNAME_LENGTH 64
+#define VERSION "0.4"
+#define AUTHOR	"tobii"
 
 #define cfg(%1) "exec pug_reapi/" + #%1 + ".cfg"
 
 #define VOTE_TASK_ID 127
 
-
 new bool:g_bLive = false;
-new bool:g_bGamePaused = false; //is the game paused (say /pause)
+new bool:g_bGamePaused = false; //is the game currently paused? (say /pause)
 
 enum eMixState {
 	N, //normal
@@ -28,33 +24,37 @@ enum eMixState {
 	L, //live
 	O, //overtime
 };
-new eMixState:gameState = N; //default is normal, normal is default
+new eMixState:gameState = N; //default
 
 new HookChain:g_hookChainSpawn;
+new HookChain:g_hookChainRoundEnd;
+new HookChain:g_hookChainCleanUpMap;
+new HookChain:g_hookChainOnRoundFreezeEnd;
 
 new g_iScoreTs, g_iScoreCTs, g_iScoreTotal, g_iScoreLastTie; //store the scores //TODO reapi has a method for this, need to test it
 new g_msgTeamScore; //used for updating team scores on the scoreboard
 new g_msgScoreInfo; //user for updating player scores on the scoreboard
+new g_iFrags[MAX_PLAYERS+1];
+new g_iDeaths[MAX_PLAYERS+1];
+
+
+new g_menuVoteSide; //voting menu for stay/switch
+new g_iVotesCounter[2]; //voting results
+new g_iVotingPlayersCounter; //how many players are currently voting
+new CsTeams:g_knifeWinnerTeam = CS_TEAM_UNASSIGNED; //team that won the knife round
+
+new g_hudMoneyCTs, g_hudMoneyTs; //hud sync ids for displaying money msg
 
 new bool:g_bDemoRecording = false;
 new g_szDemoName[256];
 new g_iDemoCounter = 0;
 
-new g_menuVoteSide; //voting stay/switch menu
-new g_iVotesCounter[2]; //polls
-new g_iVotingPlayersCounter; //how many players are currently voting
-new CsTeams:g_knifeWinnerTeam = CS_TEAM_UNASSIGNED; //team that won the knife round
-
-new g_hudMoneyCTs, g_hudMoneyTs; //for displaying money hud msg when /money
-
-
-new g_iFrags[MAX_PLAYERS+1];
-new g_iDeaths[MAX_PLAYERS+1];
 
 
 public plugin_init() {
 	register_plugin(PLUGIN, VERSION, AUTHOR);
 
+	//admin cmds
 	register_clcmd("say /warmup", "clcmd_say_warmup");
 	register_clcmd("say /normal", "clcmd_say_normal");
 	register_clcmd("say /spec", "clcmd_say_spec");
@@ -64,6 +64,7 @@ public plugin_init() {
 	register_clcmd("say /pause", "clcmd_say_pause");
 	register_clcmd("say /unpause", "clcmd_say_unpause");
 
+	//user cmds starting
 	register_clcmd("say .score", "clcmd_say_score");
 	register_clcmd("say .demo", "clcmd_say_demo");
 
@@ -78,28 +79,90 @@ public plugin_init() {
 	g_hudMoneyTs = CreateHudSyncObj();
 
 	register_event("HLTV", "round_start", "a", "1=0", "2=0"); //freezetime starts
-	register_event("SendAudio", "event_win_t", "a", "2&%!MRAD_terwin"); //Ts win
-	register_event("SendAudio", "event_win_ct", "a", "2&%!MRAD_ctwin"); //CTs win
-	register_logevent("logevent_round_end", 2, "1=Round_End"); //round end
+
 	g_msgTeamScore = get_user_msgid("TeamScore");
 	g_msgScoreInfo = get_user_msgid("ScoreInfo");
-	register_message(g_msgTeamScore, "hook_teamscore"); //hook it last
+
+	register_message(g_msgTeamScore, "hook_teamscore"); //hook teamscore msg last
+
 	g_hookChainSpawn = RegisterHookChain(RG_CBasePlayer_Spawn, "hook_spawn", true); //called POST spawn
-	RegisterHookChain(RG_RoundEnd, "RoundEnd", false);
-}
-public RoundEnd(WinStatus:status, ScenarioEventEndRound:event, Float:tmDelay) {
-    if (event == ROUND_GAME_COMMENCE) {
-        //set_member_game(m_bGameStarted, true);
-        SetHookChainReturn(ATYPE_BOOL, false);
-        return HC_SUPERCEDE;
-    }
-    return HC_CONTINUE;
+	g_hookChainRoundEnd = RegisterHookChain(RG_RoundEnd, "hook_round_end", false); //pre round end
+	g_hookChainCleanUpMap = RegisterHookChain(RG_CSGameRules_CleanUpMap, "hook_freezetime_start", true); // post freezetime start
+	g_hookChainOnRoundFreezeEnd = RegisterHookChain(RG_CSGameRules_OnRoundFreezeEnd, "hook_freezetime_end", true); //post freezetime end
 }
 
+
+public hook_round_end(WinStatus:status, ScenarioEventEndRound:event, Float:tmDelay) {
+	if (event == ROUND_GAME_COMMENCE) {
+		//set_member_game(m_bGameStarted, true);
+		SetHookChainReturn(ATYPE_BOOL, false);
+		return HC_SUPERCEDE;
+	} else if (g_bLive) {
+		if (status == WINSTATUS_TERRORISTS) {
+			g_iScoreTs++;
+			g_knifeWinnerTeam = CS_TEAM_T;
+		} else if (status == WINSTATUS_CTS) {
+			g_knifeWinnerTeam = CS_TEAM_CT;
+			g_iScoreCTs++;
+		}
+		g_iScoreTotal = g_iScoreTs + g_iScoreCTs;
+		switch (gameState) {
+			case K: {
+				if (g_knifeWinnerTeam != CS_TEAM_UNASSIGNED) {
+					set_task(0.3, "vote_swap");
+				}
+			} case L: {
+				if (g_iScoreTotal == 15) {
+					_get_stats();
+					rg_swap_all_players(); //test this
+					_scores_swap();
+					server_cmd("sv_restart 3");
+					set_task(3.2, "_set_stats");
+				} else if (g_iScoreTs >= 16) {
+					display_T_win_msg();
+					end_match();
+				} else if (g_iScoreCTs >= 16) {
+					display_CT_win_msg();
+					end_match();
+				} else if (g_iScoreTotal >= 30) {
+					g_iScoreLastTie = 15;
+					_get_stats();
+					_start(O);
+					server_cmd("sv_restart 3");
+					set_task(3.2, "_set_stats");
+				}
+			} case O: {
+				if (g_iScoreTotal == (g_iScoreLastTie*2)+3) { //overtime swap
+					rg_swap_all_players(); //test this
+					_get_stats();
+					_scores_swap();
+					server_cmd("sv_restart 3");
+					set_task(3.2, "_set_stats");
+				} else if (g_iScoreTs >= g_iScoreLastTie+4) { //Ts win overtime
+					display_T_win_msg();
+					end_match();
+				} else if (g_iScoreCTs >= g_iScoreLastTie+4) { //CTs win overtime
+					display_CT_win_msg();
+					end_match();
+				} else if ((g_iScoreTs == g_iScoreLastTie+3) && (g_iScoreCTs == g_iScoreLastTie+3)) { //another draw, do more overime
+					g_iScoreLastTie = g_iScoreTs;
+					_get_stats();
+					_start(O);
+					server_cmd("sv_restart 3");
+					set_task(3.2, "_set_stats");
+				}
+			}
+		}
+	}
+	return HC_CONTINUE;
+}
 
 public server_cfg() {
 	server_cmd(cfg(default)); //load default settings
 	DisableHookChain(g_hookChainSpawn); //dont do spawn stuff yet
+	DisableHookChain(g_hookChainRoundEnd); 
+	DisableHookChain(g_hookChainCleanUpMap); 
+	DisableHookChain(g_hookChainOnRoundFreezeEnd); 
 }
 
 
@@ -109,27 +172,45 @@ public _start(eMixState:x) {
 			gameState = N;
 			server_cmd(cfg(default));
 			DisableHookChain(g_hookChainSpawn);
+			DisableHookChain(g_hookChainRoundEnd); 
+			DisableHookChain(g_hookChainCleanUpMap); 
+			DisableHookChain(g_hookChainOnRoundFreezeEnd); 
 			client_print(0, print_chat, "Game is now in normal mode, respawning is off.");
 			g_bLive = false;
 		} case W: {
 			gameState = W;
 			server_cmd(cfg(warmup));
 			EnableHookChain(g_hookChainSpawn);
+			EnableHookChain(g_hookChainRoundEnd); 
+			EnableHookChain(g_hookChainCleanUpMap); 
+			EnableHookChain(g_hookChainOnRoundFreezeEnd); 
 			client_print(0, print_chat, "Warmup has started. Enjoy!");
 			g_bLive = false;
 		} case K: {
+			DisableHookChain(g_hookChainSpawn);
+			EnableHookChain(g_hookChainRoundEnd); 
+			EnableHookChain(g_hookChainCleanUpMap); 
+			EnableHookChain(g_hookChainOnRoundFreezeEnd); 
 			gameState = K;
 			server_cmd(cfg(knife));
 			_scores_reset();
 			g_bLive = true;
 			//set_member_game(m_bGameStarted, true);
 		} case L: {
+			DisableHookChain(g_hookChainSpawn);
+			EnableHookChain(g_hookChainRoundEnd); 
+			EnableHookChain(g_hookChainCleanUpMap); 
+			EnableHookChain(g_hookChainOnRoundFreezeEnd); 
 			demo_record();
 			gameState = L;
 			_scores_reset();
 			server_cmd(cfg(live));
 			g_bLive = true;
 		} case O: {
+			DisableHookChain(g_hookChainSpawn);
+			EnableHookChain(g_hookChainRoundEnd); 
+			EnableHookChain(g_hookChainCleanUpMap); 
+			EnableHookChain(g_hookChainOnRoundFreezeEnd); 
 			gameState = O;
 			server_cmd(cfg(extra));
 			g_bLive = true;
@@ -284,7 +365,7 @@ public clcmd_say_score(id) {
 
 public clcmd_say_demo(id) {
 	if (g_bLive) {
-		client_print(id, print_chat, "[CsMundum] Recording demo: cstrike/%s.dem", g_szDemoName);
+		client_print(id, print_chat, "Recording demo: cstrike/%s.dem", g_szDemoName);
 	} else {
 		client_print(id, print_chat, "Match has to be live before demo recording starts.");
 	}
@@ -307,7 +388,7 @@ public clcmd_say_money(id) {
 }
 
 
-public round_start() {
+public hook_freezetime_start() {
 	switch (gameState) {
 		case W: {
 			client_print(0, print_chat, "WARMUP :: RESPAWNING ENABLED");
@@ -328,76 +409,6 @@ public round_start() {
 				client_print(0, print_chat, "LIVE :: OVERTIME -- SECOND HALF -- ROUND #%d", g_iScoreTotal+1);
 			}
 			_util_print_scores(0);
-		}
-	}
-}
-
-public event_win_t() {
-	if (g_bLive) {
-		if (gameState == K) {
-			g_knifeWinnerTeam = CS_TEAM_T;
-			set_task(0.3, "vote_swap");
-		}
-		g_iScoreTs++;
-	}
-}
-
-public event_win_ct() {
-	if (g_bLive) {
-		if (gameState == K) {
-			g_knifeWinnerTeam = CS_TEAM_CT;
-			set_task(0.3, "vote_swap");
-		}
-		g_iScoreCTs++;
-	}
-}
-
-
-public logevent_round_end() {
-	if (g_bLive) {
-		g_iScoreTotal = g_iScoreTs + g_iScoreCTs;
-		switch (gameState) {
-			case L: {
-				if (g_iScoreTotal == 15) {
-					_get_stats();
-					rg_swap_all_players(); //test this
-					_scores_swap();
-					server_cmd("sv_restart 3");
-					set_task(3.2, "_set_stats");
-				} else if (g_iScoreTs >= 16) {
-					display_T_win_msg();
-					end_match();
-				} else if (g_iScoreCTs >= 16) {
-					display_CT_win_msg();
-					end_match();
-				} else if (g_iScoreTotal >= 30) {
-					g_iScoreLastTie = 15;
-					_get_stats();
-					_start(O);
-					server_cmd("sv_restart 3");
-					set_task(3.2, "_set_stats");
-				}
-			} case O: {
-				if (g_iScoreTotal == (g_iScoreLastTie*2)+3) { //overtime swap
-					rg_swap_all_players(); //test this
-					_get_stats();
-					_scores_swap();
-					server_cmd("sv_restart 3");
-					set_task(3.2, "_set_stats");
-				} else if (g_iScoreTs >= g_iScoreLastTie+4) { //Ts win overtime
-					display_T_win_msg();
-					end_match();
-				} else if (g_iScoreCTs >= g_iScoreLastTie+4) { //CTs win overtime
-					display_CT_win_msg();
-					end_match();
-				} else if ((g_iScoreTs == g_iScoreLastTie+3) && (g_iScoreCTs == g_iScoreLastTie+3)) { //another draw, do more overime
-					g_iScoreLastTie = g_iScoreTs;
-					_get_stats();
-					_start(O);
-					server_cmd("sv_restart 3");
-					set_task(3.2, "_set_stats");
-				}
-			}
 		}
 	}
 }
@@ -457,12 +468,12 @@ demo_record() {
 	new szTime[26]; //1999-11-30_23h58m19s+100
 	get_time("%F_%Hh%Mm%Ss_%z", szTime, charsmax(szTime));
 	
-	formatex(g_szDemoName, charsmax(g_szDemoName), "CsMundum[%s][%s]", szMapName, szTime); //demo name len = 64 + 26 + 9 + 2 + 1
+	formatex(g_szDemoName, charsmax(g_szDemoName), "MIX[%s][%s]", szMapName, szTime); //demo name len = 64 + 26 + 9 + 2 + 1
 	client_cmd(0, "record %s", g_szDemoName);
 	g_bDemoRecording = true;
 }
 demo_stop() {
-	client_print(0, print_chat, "[CsMundum] Saving demo: cstrike/%s.dem", g_szDemoName);
+	client_print(0, print_console, "Saving demo: cstrike/%s.dem", g_szDemoName);
 	client_cmd(0, "stop");
 	g_bDemoRecording = false;
 }
@@ -492,6 +503,7 @@ display_CT_win_msg() {
 
 
 public vote_swap() {
+	g_iVotingPlayersCounter = 0;
 	g_iVotesCounter[0] = 0;
 	g_iVotesCounter[1] = 0;
 	g_menuVoteSide = menu_create("\rChoose option:", "menu_handler");
@@ -552,7 +564,7 @@ public _show_money_ct(id) {
 		lenTotal += lenTmp;
 	}
 	set_hudmessage(0,100,200, 0.2,0.2, 0,6.0, 12.0,0.1,0.2, -1);
-	ShowSyncHudMsg(id, g_hudMoneyCTs, "CTs FINANCIAL REPORT: %s", szMoney);
+	ShowSyncHudMsg(id, g_hudMoneyCTs, "CT's FINANCIAL REPORT: %s", szMoney);
 }
 public _show_money_t(id) {
 	new szName[MAX_NAME_LENGTH+1];
@@ -568,7 +580,7 @@ public _show_money_t(id) {
 		lenTotal += lenTmp;
 	}
 	set_hudmessage(200,100,0, 0.7,0.7, 0,6.0, 12.0,0.1,0.2, -1);
-	ShowSyncHudMsg(id, g_hudMoneyTs, "Ts JIHAD BUDGET: %s", szMoney);
+	ShowSyncHudMsg(id, g_hudMoneyTs, "T's JIHAD BUDGET: %s", szMoney);
 }
 
 public _get_stats() {
