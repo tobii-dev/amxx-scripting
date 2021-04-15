@@ -97,7 +97,7 @@ public hook_round_end(WinStatus:status, ScenarioEventEndRound:event, Float:tmDel
 		//set_member_game(m_bGameStarted, true);
 		SetHookChainReturn(ATYPE_BOOL, false);
 		return HC_SUPERCEDE;
-	} else if (g_bLive) {
+	} else if (g_bLive && (event != ROUND_GAME_RESTART)) {
 		if (status == WINSTATUS_TERRORISTS) {
 			g_iScoreTs++;
 			g_knifeWinnerTeam = CS_TEAM_T;
