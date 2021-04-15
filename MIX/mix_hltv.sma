@@ -184,7 +184,9 @@ public _task_recv(task) {
 				if (g_hltv[cmd] == START_DEMO) {
 					client_print(0, print_console, "[MixHLTV] >> SENDING RCON COMMAND TO START DEMO RECORDING...");
 					new szCMD[LEN_HLTV_CMD];
-					new q_len = formatex(szCMD, LEN_HLTV_CMD, "%c%c%c%crcon %s ^"%s^" %s", 255,255,255,255, g_hltv[challenge], g_hltv[pw], "stoprecording;record demos/HLTV"); //2 cmds in 1 rcon cmd
+					//new q_len = formatex(szCMD, LEN_HLTV_CMD, "%c%c%c%crcon %s ^"%s^" %s", 255,255,255,255, g_hltv[challenge], g_hltv[pw], "stoprecording;record demos/HLTV"); //2 cmds in 1 rcon cmd
+					/* if the stoprecording cmd fails, it doesnt execute the second one for some reason, depends on HLTV client version I think... */
+					new q_len = formatex(szCMD, LEN_HLTV_CMD, "%c%c%c%crcon %s ^"%s^" %s", 255,255,255,255, g_hltv[challenge], g_hltv[pw], "record demos/HLTV"); //just record
 					socket_send2(g_hltv[s], szCMD, q_len);
 					client_print(0, print_chat, "%s", szCMD);
 				} else if (g_hltv[cmd] == STOP_DEMO) {
