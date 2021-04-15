@@ -3,7 +3,7 @@
 #define NULL_HULL_VEC {0,0,0}
 
 new const g_szMdl[][] = {
-	"models/player/artic/artic.mdl",
+	"models/player/arctic/arctic.mdl",
 	"models/player/gign/gign.mdl",
 	"models/player/gsg9/gsg9.mdl",
 	"models/player/guerilla/guerilla.mdl",
