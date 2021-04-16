@@ -82,8 +82,6 @@ public plugin_init() {
 	RegisterHookChain(RG_RoundEnd, "hook_round_end", false); //pre round end
 	RegisterHookChain(RG_CSGameRules_CleanUpMap, "hook_freezetime_start", true); // post freezetime start
 	RegisterHookChain(RG_CSGameRules_OnRoundFreezeEnd, "hook_freezetime_end", true); //post freezetime end
-	RegisterHookChain(RG_CSGameRules_OnRoundFreezeEnd, "hook_freezetime_end", true); //post freezetime end
-	RegisterHookChain(RG_ShowVGUIMenu, "hook_VGUI_menu", false); //pre team select
 }
 
 
@@ -188,15 +186,6 @@ public hook_freezetime_end() {
 	//TODO do we need to do anything here?
 }
 
-
-
-public hook_VGUI_menu(const id, VGUIMenu:menuType, const bitsSlots, szOldMenu[], bool:bForceOldMenu) {
-    if (menuType == VGUI_Menu_Team) {
-		client_print(id, print_chat, "HELLO MENU!");
-    	return HC_SUPERCEDE;
-	}
-	return HC_CONTINUE;
-}
 
 public hook_teamscore(iMsgId, msgDest , iMsgEntity) {
 	if (g_bLive) {
@@ -593,9 +582,9 @@ public _set_stats() {
 		write_short(f); //frags
 		write_short(d); //deaths
 		write_short(0); //classId is always 0 @cs1.6
-		write_short(get_user_team(p)); //teamId http://www.amxmodx.org/api/cstrike_const#counter-strike-team-id-constants
+		write_short(0); //teamId http://www.amxmodx.org/api/cstrike_const#counter-strike-team-id-constants
 		message_end();
-		client_print(p, print_console, "_set_stats(f=%d, d=%d)", f, d);
+		//client_print(p, print_console, "_set_stats()");
 	}
 }
 
