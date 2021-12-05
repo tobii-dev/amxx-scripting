@@ -4,9 +4,11 @@
 #include <engine>
 
 
+#pragma semicolon 1
+
+
 public plugin_init() {
 	register_plugin("FITH-ReAPI", "0.1", "tobii");
-
 	RegisterHookChain(RG_CBasePlayer_Radio, "hook_playerRadio", false);
 	RegisterHookChain(RG_ThrowHeGrenade, "hook_he", true);
 	RegisterHookChain(RG_ThrowFlashbang, "hook_flash", true);
@@ -20,6 +22,7 @@ public hook_playerRadio(id, msg_id[], msg_verbose[], pitch, bool:showIcon) {
 	}
 	return HC_CONTINUE;
 }
+
 
 public hook_he(id) {
 	new TeamName:team = get_member(id, m_iTeam);
@@ -36,6 +39,7 @@ public hook_he(id) {
 		}
 	}
 }
+
 public hook_flash(id) {
 	new TeamName:team = get_member(id, m_iTeam);
 	new szName[MAX_NAME_LENGTH];
@@ -51,6 +55,7 @@ public hook_flash(id) {
 		}
 	}
 }
+
 public hook_smoke(id) {
 	new TeamName:team = get_member(id, m_iTeam);
 	new szName[MAX_NAME_LENGTH];
@@ -66,5 +71,3 @@ public hook_smoke(id) {
 		}
 	}
 }
-
-#pragma semicolon 1
